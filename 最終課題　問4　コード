@@ -1,1 +1,100 @@
+import numpy as np
+import matplotlib.pyplot as plt
+from scipy.optimize import fsolve
+from scipy.stats import norm
+from scipy.interpolate import CubicSpline
+
+sigma = 1.5
+beta_low = 0.1 
+rho = 0.6
+sigma_eps = 0.6
+r = 0.04
+w = 1
+
+h_L = np.exp(-sigma_eps)
+h_H = np.exp(sigma_eps)
+h_grid = np.array([h_L, h_H])
+
+num_states = len(h_grid)
+
+def tauchen(rho, sigma_eps, num_states=2):
+    z_std = sigma_eps / np.sqrt(1 - rho**2)
+    z_grid = np.linspace(-z_std, z_std, num_states)
+    step = z_grid[1] - z_grid[0]
+    z_grid = np.exp(z_grid)
+
+    P = np.zeros((num_states, num_states))
+
+    for i in range(num_states):
+        for j in range(num_states):
+            if j == 0:
+                P[i, j] = norm.cdf((z_grid[j] - rho * z_grid[i] + step / 2) / sigma_eps)
+            elif j == num_states - 1:
+                P[i, j] = 1 - norm.cdf((z_grid[j] - rho * z_grid[i] - step / 2) / sigma_eps)
+            else:
+                P[i, j] = norm.cdf((z_grid[j] - rho * z_grid[i] + step / 2) / sigma_eps) - \
+                          norm.cdf((z_grid[j] - rho * z_grid[i] - step / 2) / sigma_eps)
+    return z_grid, P
+
+h_grid, P = tauchen(rho, sigma_eps, num_states)
+print("生産性グリッド:", h_grid)
+print("遷移行列:\n", P)
+
+a_min, a_max = 0, 10
+num_a = 500
+a_grid = np.linspace(a_min, a_max, num_a)
+
+def utility(c, sigma):
+    return c**(1 - sigma) / (1 - sigma)
+
+def consumption_function(next_a, a, h, r, w, sigma, beta, P, V):
+    c = w * h + (1 + r) * a - next_a
+    
+    idx = np.searchsorted(a_grid, next_a)
+    idx = min(idx, V.shape[1] - 1)  
+    future_value = beta * np.dot(P, V[:, idx])
+    return utility(c, sigma) + future_value
+
+V = np.zeros((num_states, num_a))
+policy = np.zeros((num_states, num_a))
+
+for i in range(1000):
+    V_new = np.copy(V)
+    for s in range(num_states):
+        h = h_grid[s]
+        for j, a in enumerate(a_grid):
+            def objective(next_a):
+                return -consumption_function(next_a, a, h, r, w, sigma, beta_low, P[s, :], V_new)
+            next_a_opt = fsolve(objective, a)[0]
+            policy[s, j] = next_a_opt
+            V_new[s, j] = -objective(next_a_opt)
+    if np.max(np.abs(V_new - V)) < 1e-6:
+        break
+    V = np.copy(V_new)
+
+savings_rate_low_beta = np.zeros((num_states, num_a))
+for s in range(num_states):
+    for j, a in enumerate(a_grid):
+        
+        if a != 0:
+            savings_rate_low_beta[s, j] = (policy[s, j] - a) / a 
+        else:
+            savings_rate_low_beta[s, j] = 0  # or any other suitable default value
+
+smooth_a_grid = np.linspace(a_min, a_max, num_a * 10)
+smooth_savings_rate = np.zeros((num_states, len(smooth_a_grid)))
+
+for s in range(num_states):
+    cs = CubicSpline(a_grid, savings_rate_low_beta[s, :])
+    smooth_savings_rate[s, :] = cs(smooth_a_grid)
+
+plt.figure(figsize=(10, 6))
+for s in range(num_states):
+    plt.plot(smooth_a_grid, smooth_savings_rate[s, :], label=f'h = {h_grid[s]:.2f}')
+plt.xlabel('現在の資産 (a)')
+plt.ylabel('貯蓄率')
+plt.title('資産と貯蓄率の関係（低時間選好率 β=0.1）')
+plt.legend()
+plt.grid(True)
+plt.show()
 
