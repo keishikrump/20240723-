@@ -1,1 +1,64 @@
+import numpy as np
+import matplotlib.pyplot as plt
+from scipy.stats import norm
+
+sigma = 1.5
+beta = 0.98
+rho = 0.6
+sigma_eps = 0.6
+r = 0.04
+w = 1
+T = 1
+
+h_L = np.exp(-sigma_eps)
+h_H = np.exp(sigma_eps)
+h_grid = np.array([h_L, h_H])
+
+num_states = len(h_grid)
+
+def tauchen(rho, sigma_eps, num_states=2):
+    z_std = sigma_eps / np.sqrt(1 - rho**2)
+    z_grid = np.linspace(-z_std, z_std, num_states)
+    step = z_grid[1] - z_grid[0]
+    z_grid = np.exp(z_grid)
+
+    P = np.zeros((num_states, num_states))
+
+    for i in range(num_states):
+        for j in range(num_states):
+            if j == 0:
+                P[i, j] = norm.cdf((z_grid[j] - rho * z_grid[i] + step / 2) / sigma_eps)
+            elif j == num_states - 1:
+                P[i, j] = 1 - norm.cdf((z_grid[j] - rho * z_grid[i] - step / 2) / sigma_eps)
+            else:
+                P[i, j] = norm.cdf((z_grid[j] - rho * z_grid[i] + step / 2) / sigma_eps) - \
+                          norm.cdf((z_grid[j] - rho * z_grid[i] - step / 2) / sigma_eps)
+    return z_grid, P
+
+h_grid, P = tauchen(rho, sigma_eps, num_states)
+print("生産性グリッド:", h_grid)
+print("遷移行列:\n", P)
+
+a_grid = np.linspace(0, 10, 100)
+
+def utility(c, sigma):
+    return c**(1 - sigma) / (1 - sigma)
+
+savings_rate_subsidy = np.zeros((num_states, len(a_grid)))
+
+for i, h in enumerate(h_grid):
+    for j, a in enumerate(a_grid):
+        c = w * h + (1 + r) * a + T - a  
+        savings_rate_subsidy[i, j] = a / (w * h + (1 + r) * a + T)  
+
+plt.figure(figsize=(10, 6))
+for i in range(num_states):
+    plt.plot(a_grid, savings_rate_subsidy[i, :], label=f'h = {h_grid[i]:.2f}')
+
+plt.xlabel('現在の資産 (a)')
+plt.ylabel('貯蓄率')
+plt.title('資産と貯蓄率の関係（一括補助金導入）')
+plt.legend()
+plt.grid(True)
+plt.show()
 
